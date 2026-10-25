@@ -187,12 +187,22 @@ details summary{cursor:pointer;font-weight:600}
       <div class="field"><label class="label" for="lPw">Passwort</label><input id="lPw" type="password" autocomplete="current-password" minlength="6" required></div>
       <button class="btn primary wide" type="submit" id="lBtn">Anmelden</button>
       <button class="btn link" type="button" id="lToggle">Noch kein Konto? Konto erstellen</button>
+      <button class="btn link" type="button" id="lForgot">Passwort vergessen?</button>
       <div id="loginMsg"></div>
     </form>
     <button class="btn link" type="button" data-act="to-card" id="backToCard" hidden>Zurück zu meiner Karte</button>
   </section>
 
   <!-- Nicht freigeschaltet -->
+  <section class="view" id="v-newpw" hidden>
+    <h2>Neues Passwort festlegen</h2>
+    <form class="panel stack" id="newPwForm">
+      <div class="field"><label class="label" for="npw">Neues Passwort</label><input id="npw" type="password" autocomplete="new-password" minlength="6" required></div>
+      <button class="btn primary wide" type="submit">Passwort speichern</button>
+      <div id="npwMsg"></div>
+    </form>
+  </section>
+
   <section class="view" id="v-noadmin" hidden>
     <h2>Noch nicht freigeschaltet</h2>
     <div class="notice">Du bist als <b id="naEmail"></b> angemeldet. Ein Admin muss diese E-Mail unter „Mehr → Admins“ eintragen, dann hast du Zugriff.</div>
@@ -385,6 +395,7 @@ function render(){
   if (S.mode==='loading') return show('v-loading');
   if (S.mode==='holder'){ renderHolder(); return show('v-holder'); }
   if (S.mode==='login'){ $('#backToCard').hidden = !S.holder; return show('v-login'); }
+  if (S.mode==='newpw') return show('v-newpw');
   if (S.mode==='noadmin'){ $('#naEmail').textContent = S.session?.user?.email||''; return show('v-noadmin'); }
   document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-current', b.dataset.tab===S.tab?'page':'false'));
   show('v-'+S.tab);
@@ -535,6 +546,7 @@ async function loadHolder(){
   render();
 }
 async function decideMode(){
+  if (S.recovery){ S.mode='newpw'; render(); return; }
   const {data:{session}} = await sb.auth.getSession(); S.session = session;
   if (session){
     let ok=false; try{ ok = await q(sb.rpc('is_admin')); }catch(e){ console.warn(e); }
@@ -820,7 +832,23 @@ $('#lookSave').addEventListener('click', async()=>{
 });
 
 /* ---------- Start ---------- */
+$('#lForgot').addEventListener('click', async()=>{
+  const email=$('#lEmail').value.trim();
+  if (!email){ $('#loginMsg').innerHTML='<div class="notice">Trag oben deine E-Mail ein und tippe dann nochmal auf „Passwort vergessen?“.</div>'; return; }
+  try{ const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:BASE}); if (error) throw error;
+    $('#loginMsg').innerHTML='<div class="notice">Wir haben dir eine E-Mail geschickt. Öffne den Link darin auf diesem Handy, dann kannst du ein neues Passwort festlegen.</div>'; }
+  catch(e){ $('#loginMsg').innerHTML=`<div class="notice">${esc(e.message||'Senden fehlgeschlagen.')}</div>`; }
+});
+$('#newPwForm').addEventListener('submit', async ev=>{
+  ev.preventDefault();
+  try{ const {error}=await sb.auth.updateUser({password:$('#npw').value}); if (error) throw error;
+    S.recovery=false; history.replaceState(null,'',BASE+location.search); toast('Passwort gespeichert'); decideMode(); }
+  catch(e){ $('#npwMsg').innerHTML=`<div class="notice">${esc(e.message||'Speichern fehlgeschlagen.')}</div>`; }
+});
+sb.auth.onAuthStateChange(ev=>{ if (ev==='PASSWORD_RECOVERY'){ S.recovery=true; S.mode='newpw'; render(); } });
+
 (function boot(){
+  if (/type=recovery/.test(location.hash)) S.recovery=true;
   const p=new URLSearchParams(location.search), k=(p.get('k')||'').toUpperCase(), t=p.get('t')||'';
   if (k && t){ S.holder={k,t}; S.wantCard=true; try{ localStorage.setItem('cbrnKarte', JSON.stringify(S.holder)); }catch(e){} }
   else { try{ const s=JSON.parse(localStorage.getItem('cbrnKarte')||'null'); if (s && s.k && s.t) S.holder=s; }catch(e){} }
