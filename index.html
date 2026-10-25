@@ -148,8 +148,10 @@ div.item:hover{background:none}
 .receipt{width:100%;border-radius:10px;border:1px solid var(--line);background:var(--sunk)}
 .linkbox{font-family:var(--f-mono);font-size:13px;word-break:break-all;background:var(--sunk);border-radius:8px;padding:8px 10px;user-select:all}
 .sheet{position:fixed;inset:0;z-index:30;display:flex;align-items:flex-end;justify-content:center}
+.sheet .pn > *{flex-shrink:0}
+body.locked{overflow:hidden}
 .sheet .bd{position:absolute;inset:0;background:rgb(0 0 0 / .45)}
-.sheet .pn{position:relative;background:var(--surface);width:100%;max-width:720px;max-height:92%;overflow:auto;border-radius:18px 18px 0 0;padding:18px max(16px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
+.sheet .pn{position:relative;background:var(--surface);width:100%;max-width:720px;max-height:92%;max-height:calc(100dvh - env(safe-area-inset-top,0px) - 24px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;border-radius:18px 18px 0 0;padding:18px max(16px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--line);padding:6px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))}
 nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
 nav.tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;border-radius:10px}
@@ -544,8 +546,8 @@ async function decideMode(){
 }
 
 /* ---------- Sheets ---------- */
-function openSheet(html, meta){ S.sheet=meta||{kind:'form'}; $('#sheetPanel').innerHTML=html; $('#sheet').hidden=false; }
-function closeSheet(){ $('#sheet').hidden=true; $('#sheetPanel').innerHTML=''; S.sheet=null; }
+function openSheet(html, meta){ const pn=$('#sheetPanel'), keep=!$('#sheet').hidden && S.sheet && meta && S.sheet.kind===meta.kind && S.sheet.id===meta.id ? pn.scrollTop : 0; S.sheet=meta||{kind:'form'}; pn.innerHTML=html; $('#sheet').hidden=false; document.body.classList.add('locked'); pn.scrollTop=keep; }
+function closeSheet(){ document.body.classList.remove('locked'); $('#sheet').hidden=true; $('#sheetPanel').innerHTML=''; S.sheet=null; }
 const sheetHead = t => `<div class="spread"><h2>${t}</h2><button class="btn" data-act="close">Schließen</button></div>`;
 
 function entryForm(){
