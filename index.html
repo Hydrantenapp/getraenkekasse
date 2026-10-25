@@ -161,7 +161,7 @@ nav.tabs button[aria-current="page"]{color:var(--primary);background:color-mix(i
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.sheet .pn{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
 @media (max-width:400px){.grid2{grid-template-columns:1fr}.balance .big{font-size:28px}}
-.seg3{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg3{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .seg3 button{border:0;background:var(--bg);padding:10px 6px;font-weight:600;cursor:pointer;min-height:44px;line-height:1.2}
 .seg3 button[aria-pressed="true"]{background:var(--primary);color:var(--on-primary)}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
@@ -724,18 +724,26 @@ async function entryDetail(id){
 function cardForm(){
   openSheet(`${sheetHead('Neue Getränkekarte')}
     <form id="cardForm" class="stack" style="gap:14px">
-      <div class="seg3" role="group" aria-label="Art der Karte"><button type="button" data-mode="neu" aria-pressed="true">Neu verkauft</button><button type="button" data-mode="alt" aria-pressed="false">Bestehende Karte übernehmen</button></div>
+      <div class="seg3" role="group" aria-label="Art der Karte"><button type="button" data-mode="neu" aria-pressed="true">Neu verkauft</button><button type="button" data-mode="alt" aria-pressed="false">Bestehende übernehmen</button><button type="button" data-mode="leer" aria-pressed="false">Leer anlegen</button></div>
       <div class="field"><label class="label" for="cName">Name der Person</label><input id="cName" maxlength="60" required placeholder="Vor- und Nachname"></div>
-      <div class="field"><label class="label" for="cWert" id="cWertLbl">Wert (€)</label><input id="cWert" inputmode="decimal" class="num" value="${centsIn(S.config.wert)}"></div>
+      <div class="notice" id="cLeerInfo" hidden>Die Karte wird ohne Guthaben angelegt. Link und QR-Code kannst du sofort verschicken. Restguthaben oder eine Aufladung buchst du später in der Karte über „+ Aufladen“.</div>
+      <div class="field" id="cWertRow"><label class="label" for="cWert" id="cWertLbl">Wert (€)</label><input id="cWert" inputmode="decimal" class="num" value="${centsIn(S.config.wert)}"></div>
       <label class="check" id="cPaidRow"><input type="checkbox" id="cPaid" checked><span>Bezahlt – als Einnahme ins Kassenbuch eintragen. Ohne Haken bleibt die Zahlung offen und kann später nachgebucht werden.</span></label>
       <div class="notice" id="cAltInfo" hidden>Für Karten, die schon vor der App verkauft und bezahlt wurden. Das Restguthaben kommt auf die neue digitale Karte, ins Kassenbuch wird nichts gebucht, weil das Geld schon im Anfangsbestand steckt.</div>
       <button class="btn primary wide" type="submit" id="cSave">Karte anlegen</button>
     </form>`);
   const f=$('#cardForm'); f.dataset.mode='neu';
   f.querySelectorAll('.seg3 button').forEach(b=>b.onclick=()=>{ f.dataset.mode=b.dataset.mode; f.querySelectorAll('.seg3 button').forEach(x=>x.setAttribute('aria-pressed',x===b));
-    const alt=b.dataset.mode==='alt'; $('#cWertLbl').textContent = alt?'Restguthaben (€)':'Wert (€)'; $('#cPaidRow').hidden=alt; $('#cAltInfo').hidden=!alt; $('#cSave').textContent = alt?'Karte übernehmen':'Karte anlegen'; if (alt) $('#cWert').select(); });
+    const alt=b.dataset.mode==='alt', leer=b.dataset.mode==='leer'; $('#cWertLbl').textContent = alt?'Restguthaben (€)':'Wert (€)'; $('#cWertRow').hidden=leer; $('#cPaidRow').hidden=alt||leer; $('#cAltInfo').hidden=!alt; $('#cLeerInfo').hidden=!leer; $('#cSave').textContent = alt?'Karte übernehmen':(leer?'Leere Karte anlegen':'Karte anlegen'); if (alt) $('#cWert').select(); });
   f.onsubmit = async ev=>{
-    ev.preventDefault(); const name=$('#cName').value.trim(), wert=toCents($('#cWert').value), alt=f.dataset.mode==='alt';
+    ev.preventDefault(); const name=$('#cName').value.trim(), wert=toCents($('#cWert').value), alt=f.dataset.mode==='alt', leer=f.dataset.mode==='leer';
+    if (leer){
+      if (!name){ toast('Bitte einen Namen angeben.'); return; }
+      $('#cSave').disabled=true; const code=newCode();
+      try{ await q(sb.from('karten').insert({code, name, wert:S.config.wert})); closeSheet(); toast('Leere Karte angelegt'); await loadAll(); openCard(code); }
+      catch(e){ fail(e); $('#cSave').disabled=false; }
+      return;
+    }
     if (!name || !(wert>0)){ toast(alt?'Name und Restguthaben angeben.':'Name und Wert angeben.'); return; }
     $('#cSave').disabled=true; const code=newCode();
     try{
@@ -760,6 +768,7 @@ function openCard(code){
       <div class="row">${canShare?`<button class="btn primary" data-act="share" data-id="${code}">Link teilen (WhatsApp …)</button>`:''}<button class="btn ${canShare?'':'primary'}" data-act="copy-msg" data-id="${code}">Nachricht kopieren</button><button class="btn" data-act="save-img" data-id="${code}">Als Bild</button></div>
     </div>
     ${openPay()[code] ? `<div class="notice stack" style="gap:8px"><b>Noch nicht bezahlt: ${eur(openPay()[code])}</b><span>Sobald das Geld da ist, hier nachbuchen. Es wird dann als Einnahme ins Kassenbuch eingetragen.</span><button class="btn primary" data-act="pay-open" data-id="${code}">Zahlung nachbuchen</button></div>` : ''}
+    ${k.aktiv && !hist.length ? `<div class="notice">Diese Karte hat noch kein Guthaben. Über „+ Aufladen“ kannst du ein Restguthaben von einer alten Karte übernehmen oder neu aufladen.</div>` : ''}
     <div class="row" id="topupRow">${k.aktiv?`<button class="btn amber" data-act="topup" data-id="${code}">+ Aufladen</button><button class="btn danger" data-act="deact" data-id="${code}">Deaktivieren</button>`:`<button class="btn" data-act="react" data-id="${code}">Wieder aktivieren</button>`}</div>
     <h3>Verlauf</h3>${histHTML(hist)}
     <div class="panel stack" style="margin-top:8px"><h3>Karte löschen</h3>
@@ -889,12 +898,12 @@ document.addEventListener('click', async ev=>{
         <b>Wurde schon bezahlt?</b>
         <div class="stack" style="gap:8px"><button class="btn primary" data-act="topup-go" data-paid="1" data-id="${id}">Ja, jetzt bezahlt (Kassenbuch)</button>
         <button class="btn" data-act="topup-go" data-paid="0" data-id="${id}">Nein, zahlt später</button>
-        <button class="btn" data-act="topup-go" data-paid="alt" data-id="${id}">Übertrag von alter Karte (schon früher bezahlt)</button>
+        <button class="btn" data-act="topup-go" data-paid="alt" data-id="${id}">Restguthaben von alter Karte (schon früher bezahlt)</button>
         <button class="btn link" data-act="card" data-id="${id}">Abbrechen</button></div></div>`; }
     else if (a==='topup-go'){ const w=toCents($('#tBetrag').value), mode=t.dataset.paid; if (!(w>0)){ toast('Bitte einen Betrag größer 0 eingeben.'); return; } t.disabled=true;
       await q(sb.from('buchungen').insert(mode==='0' ? {karte:id, typ:'auf', betrag:w, bezahlt:false} : {karte:id, typ:'auf', betrag:w}));
       if (mode==='1') await q(sb.from('kasse').insert({typ:'ein', betrag:w, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Aufladung – '+k.name, karte:id}));
-      toast(eur(w)+(mode==='alt'?' übertragen':' aufgeladen')+(mode==='0'?' – Zahlung offen':'')); await loadAll(); openCard(id); }
+      toast(eur(w)+(mode==='alt'?' Restguthaben übernommen':' aufgeladen')+(mode==='0'?' – Zahlung offen':'')); await loadAll(); openCard(id); }
     else if (a==='pay-open'){ const sum=openPay()[id]||0; if (!sum) return; if (!confirm2('Geld erhalten? Tippen zum Bestätigen')) return;
       await q(sb.from('buchungen').update({bezahlt:true}).eq('karte',id).eq('typ','auf').eq('bezahlt',false));
       await q(sb.from('kasse').insert({typ:'ein', betrag:sum, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Nachzahlung Getränkekarte – '+k.name, karte:id}));
