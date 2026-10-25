@@ -161,6 +161,32 @@ nav.tabs button[aria-current="page"]{color:var(--primary);background:color-mix(i
 details summary{cursor:pointer;font-weight:600}
 @media (prefers-reduced-motion:no-preference){.sheet .pn{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
 @media (max-width:400px){.grid2{grid-template-columns:1fr}.balance .big{font-size:28px}}
+.seg3{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg3 button{border:0;background:var(--bg);padding:10px 6px;font-weight:600;cursor:pointer;min-height:44px;line-height:1.2}
+.seg3 button[aria-pressed="true"]{background:var(--primary);color:var(--on-primary)}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chips button{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:6px 12px;font-weight:600;cursor:pointer;min-height:36px}
+.chips button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.report{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:16px}
+.report h2{font-size:24px}
+.rgrid{display:grid;grid-template-columns:1fr auto;gap:4px 16px;font-variant-numeric:tabular-nums}
+.rgrid .num{text-align:right}
+.rgrid .tot{font-weight:700;border-top:1px solid var(--ink);padding-top:4px}
+.rgrid .sec{grid-column:1/-1;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;margin-top:8px}
+.tscroll{overflow-x:auto}
+.rtable{border-collapse:collapse;width:100%;font-size:14px;min-width:520px}
+.rtable th,.rtable td{border-bottom:1px solid var(--line);padding:6px 6px;text-align:left;vertical-align:top}
+.rtable th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.rtable td.n{text-align:right;font-family:var(--f-mono);white-space:nowrap}
+.rfoot{font-size:12px;color:var(--muted)}
+@media print{
+  :root{--bg:#fff;--surface:#fff;--sunk:#f2f2f2;--ink:#000;--muted:#444;--line:#bbb;--pos:#000;--neg:#000;color-scheme:light}
+  header.top,nav.tabs,.noprint,.toast,.sheet,body::before{display:none!important}
+  body{background:#fff;padding:0!important;font-size:12px}
+  main{padding:0}
+  .report{border:0;padding:0}
+  .rtable{min-width:0}
+}
 </style>
 </head>
 <body class="noTabs">
@@ -246,6 +272,18 @@ details summary{cursor:pointer;font-weight:600}
     </div>
   </section>
 
+  <!-- Bericht -->
+  <section class="view" id="v-bericht" hidden>
+    <div class="spread noprint"><h2>Bericht</h2><button class="btn" data-tab="mehr">Zurück</button></div>
+    <div class="panel stack noprint">
+      <span class="label">Zeitraum</span>
+      <div class="chips" id="rPresets"></div>
+      <div class="grid2"><div class="field"><label class="label" for="rVon">Von</label><input id="rVon" type="date"></div><div class="field"><label class="label" for="rBis">Bis</label><input id="rBis" type="date"></div></div>
+      <button class="btn primary" data-act="print">Drucken / als PDF speichern</button>
+    </div>
+    <div id="berichtOut"></div>
+  </section>
+
   <!-- Mehr -->
   <section class="view" id="v-mehr" hidden>
     <h2>Einstellungen</h2>
@@ -275,6 +313,11 @@ details summary{cursor:pointer;font-weight:600}
       <form class="row" id="adminForm"><input id="adminEmail" class="inp" style="flex:1;min-width:0" type="email" placeholder="E-Mail" required><button class="btn" type="submit">Hinzufügen</button></form>
     </div>
     <div class="panel stack">
+      <h3>Bericht</h3>
+      <p class="muted" style="margin:0">Kassenbericht für einen Monat, ein Jahr oder einen freien Zeitraum, mit Anfangs- und Endbestand, Einnahmen und Ausgaben nach Kategorie und allen Buchungen. Zum Ansehen, Drucken oder als PDF.</p>
+      <button class="btn primary" data-tab="bericht">Bericht öffnen</button>
+    </div>
+    <div class="panel stack">
       <h3>Export</h3>
       <p class="muted" style="margin:0">Als CSV-Datei zum Öffnen in Excel.</p>
       <div class="row"><button class="btn" data-act="csv-kasse">Kassenbuch</button><button class="btn" data-act="csv-karten">Kartenbuchungen</button></div>
@@ -301,7 +344,8 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSessi
 const $ = s => document.querySelector(s);
 const S = { mode:'loading', tab:'kasse', session:null, config:{einheit:'CBRN-Einheit', preis:150, wert:1000},
   kasse:[], karten:[], buch:[], admins:[], qty:1, lastScan:null, holder:null, holderData:null, sheet:null, signup:false };
-const KAT_IN = ['Getränkekarten-Verkauf','Barverkauf','Pfandrückgabe','Spende/Zuschuss','Sonstiges'];
+const ANF = 'Anfangsbestand (Übertrag)';
+const KAT_IN = ['Getränkekarten-Verkauf', ANF,'Barverkauf','Pfandrückgabe','Spende/Zuschuss','Sonstiges'];
 const KAT_OUT = ['Getränkeeinkauf','Pfand','Verbrauchsmaterial','Sonstiges'];
 const BASE = location.origin + location.pathname;
 
@@ -347,7 +391,7 @@ async function q(p){ const {data, error} = await p; if (error) throw error; retu
 /* ---------- Berechnungen ---------- */
 function balances(){ const m={}; for (const b of S.buch) m[b.karte]=(m[b.karte]||0)+(b.typ==='auf'?b.betrag:-b.betrag); return m; }
 function openPay(){ const m={}; for (const b of S.buch) if (b.typ==='auf' && b.bezahlt===false) m[b.karte]=(m[b.karte]||0)+b.betrag; return m; }
-function kasseStats(){ let ein=0,aus=0; for (const e of S.kasse){ if(e.typ==='ein') ein+=e.betrag; else aus+=e.betrag; } return {ein,aus,saldo:ein-aus}; }
+function kasseStats(){ let ein=0,aus=0,anf=0; for (const e of S.kasse){ if(e.typ==='ein'){ if (e.kategorie===ANF) anf+=e.betrag; else ein+=e.betrag; } else aus+=e.betrag; } return {ein,aus,anf,saldo:anf+ein-aus}; }
 
 /* ---------- QR & Karte ---------- */
 function drawQR(canvas, text, px){
@@ -397,9 +441,9 @@ function render(){
   if (S.mode==='login'){ $('#backToCard').hidden = !S.holder; return show('v-login'); }
   if (S.mode==='newpw') return show('v-newpw');
   if (S.mode==='noadmin'){ $('#naEmail').textContent = S.session?.user?.email||''; return show('v-noadmin'); }
-  document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-current', b.dataset.tab===S.tab?'page':'false'));
+  document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-current', b.dataset.tab===(S.tab==='bericht'?'mehr':S.tab)?'page':'false'));
   show('v-'+S.tab);
-  renderKasse(); renderKarten(); renderScan(); renderCfg();
+  renderKasse(); renderKarten(); renderScan(); renderCfg(); if (S.tab==='bericht') renderBericht();
   if (S.sheet && S.sheet.kind==='karte') openCard(S.sheet.id);
 }
 
@@ -434,6 +478,8 @@ function renderKasse(){
     <div><span class="label">Ausgaben</span><span class="mid neg">−${eur(st.aus)}</span></div>
     <div><span class="label">Offenes Kartenguthaben</span><span class="mid">${eur(offen)}</span></div>
     <div><span class="label">Frei verfügbar</span><span class="mid ${frei<0?'neg':''}">${eur(frei)}</span></div></div>`
+    + (st.anf ? `<div class="spread muted" style="margin-top:8px;font-size:14px"><span>darin Anfangsbestand (Übertrag)</span><span class="num">${eur(st.anf)}</span></div>`
+              : `<button class="btn wide" data-act="anf" style="margin-top:12px">Anfangsbestand buchen (vorhandenes Bargeld übernehmen)</button>`)
     + (()=>{ const op=openPay(), n=Object.keys(op).length, sum=Object.values(op).reduce((a,b)=>a+b,0);
         return n ? `<button class="notice" data-act="show-open" style="border:0;text-align:left;cursor:pointer;width:100%;margin-top:12px"><b>Noch nicht bezahlt: ${eur(sum)}</b> bei ${n} ${n===1?'Karte':'Karten'}. Tippen zum Anzeigen.</button>` : ''; })();
   if (!S.kasse.length){ $('#kasseList').innerHTML = `<div class="list"><div class="empty">Noch keine Buchungen. Tippe auf „+ Buchung“, um den ersten Getränkeeinkauf oder Verkauf einzutragen. Verkaufte Getränkekarten erscheinen hier automatisch.</div></div>`; return; }
@@ -496,6 +542,72 @@ function renderCfg(){
   $('#whoami').textContent = 'Angemeldet als ' + (S.session?.user?.email||'');
   $('#adminList').innerHTML = S.admins.map(a=>`<div class="spread"><span>${esc(a.email)}</span>${a.email.toLowerCase()===me?'<span class="muted">du</span>':`<button class="btn danger" data-act="del-admin" data-id="${esc(a.email)}">Entfernen</button>`}</div>`).join('');
 }
+
+/* ---------- Bericht ---------- */
+const localDate = iso => { const d=new Date(iso); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const dDE = iso => { const [y,m,d]=iso.split('-'); return d+'.'+m+'.'+y; };
+function presetRange(p){
+  const n=new Date(), y=n.getFullYear(), m=n.getMonth(), f=d=>localDate(d.toISOString ? d : new Date(d));
+  if (p==='monat') return [f(new Date(y,m,1)), f(new Date(y,m+1,0))];
+  if (p==='vormonat') return [f(new Date(y,m-1,1)), f(new Date(y,m,0))];
+  if (p==='jahr') return [f(new Date(y,0,1)), f(new Date(y,11,31))];
+  if (p==='vorjahr') return [f(new Date(y-1,0,1)), f(new Date(y-1,11,31))];
+  const first = [...S.kasse.map(e=>e.datum), ...S.buch.map(b=>localDate(b.created_at))].sort()[0] || today();
+  return [first, today()];
+}
+const PRESETS=[['monat','Dieser Monat'],['vormonat','Letzter Monat'],['jahr','Dieses Jahr'],['vorjahr','Letztes Jahr'],['alles','Gesamt']];
+function renderBericht(){
+  if (!S.rRange){ S.rPreset='monat'; S.rRange=presetRange('monat'); }
+  $('#rPresets').innerHTML = PRESETS.map(([k,l])=>`<button data-act="rpreset" data-p="${k}" aria-pressed="${S.rPreset===k}">${l}</button>`).join('');
+  if (document.activeElement!==$('#rVon')) $('#rVon').value=S.rRange[0];
+  if (document.activeElement!==$('#rBis')) $('#rBis').value=S.rRange[1];
+  const [von,bis]=S.rRange; if (!von||!bis||von>bis){ $('#berichtOut').innerHTML='<div class="notice">Bitte einen gültigen Zeitraum wählen.</div>'; return; }
+  const sgn=e=>e.typ==='ein'?e.betrag:-e.betrag;
+  const vorher=S.kasse.filter(e=>e.datum<von), inP=S.kasse.filter(e=>e.datum>=von && e.datum<=bis).sort((a,b)=>a.datum.localeCompare(b.datum)||a.created_at.localeCompare(b.created_at));
+  const start=vorher.reduce((s,e)=>s+sgn(e),0);
+  const anf=inP.filter(e=>e.typ==='ein'&&e.kategorie===ANF).reduce((s,e)=>s+e.betrag,0);
+  const byKat=t=>{ const m={}; inP.filter(e=>e.typ===t && e.kategorie!==ANF).forEach(e=>m[e.kategorie]=(m[e.kategorie]||0)+e.betrag); return Object.entries(m).sort((a,b)=>b[1]-a[1]); };
+  const ein=byKat('ein'), aus=byKat('aus'), sumE=ein.reduce((s,x)=>s+x[1],0), sumA=aus.reduce((s,x)=>s+x[1],0), ende=start+anf+sumE-sumA;
+  const bP=S.buch.filter(b=>{ const d=localDate(b.created_at); return d>=von && d<=bis; });
+  const auf=bP.filter(b=>b.typ==='auf'), ab=bP.filter(b=>b.typ==='ab');
+  const neu=S.karten.filter(k=>{ const d=localDate(k.created_at); return d>=von && d<=bis; }).length;
+  const balEnd={}; S.buch.filter(b=>localDate(b.created_at)<=bis).forEach(b=>balEnd[b.karte]=(balEnd[b.karte]||0)+(b.typ==='auf'?b.betrag:-b.betrag));
+  const offenKarten=S.karten.reduce((s,k)=>s+Math.max(0,balEnd[k.code]||0),0);
+  const op=openPay(), opSum=Object.values(op).reduce((a,b)=>a+b,0);
+  const row=(l,v,cls='')=>`<span class="${cls}">${l}</span><span class="num ${cls}">${v}</span>`;
+  $('#berichtOut').innerHTML = `<div class="report">
+    <div><div class="label">${esc(S.config.einheit)} · Getränkekasse</div><h2>Kassenbericht ${dDE(von)} – ${dDE(bis)}</h2></div>
+    <div class="rgrid">
+      ${row('Kassenbestand am '+dDE(von), eur(start))}
+      ${anf?row('Anfangsbestand / Übertrag', '+'+eur(anf)):''}
+      <span class="sec">Einnahmen</span>
+      ${ein.length?ein.map(([k,v])=>row(esc(k),'+'+eur(v))).join(''):row('keine','–')}
+      ${row('Summe Einnahmen','+'+eur(sumE),'tot')}
+      <span class="sec">Ausgaben</span>
+      ${aus.length?aus.map(([k,v])=>row(esc(k),'−'+eur(v))).join(''):row('keine','–')}
+      ${row('Summe Ausgaben','−'+eur(sumA),'tot')}
+      <span class="sec">Ergebnis</span>
+      ${row('Überschuss / Verlust im Zeitraum', (sumE-sumA>=0?'+':'−')+eur(Math.abs(sumE-sumA)))}
+      ${row('Kassenbestand am '+dDE(bis), eur(ende),'tot')}
+    </div>
+    <div class="rgrid">
+      <span class="sec">Getränkekarten im Zeitraum</span>
+      ${row('Neue Karten', neu)}
+      ${row('Aufladungen ('+auf.length+')', eur(auf.reduce((s,b)=>s+b.betrag,0)))}
+      ${row('Getränke abgebucht ('+ab.reduce((s,b)=>s+(b.anzahl||1),0)+')', eur(ab.reduce((s,b)=>s+b.betrag,0)))}
+      ${row('Offenes Kartenguthaben am '+dDE(bis), eur(offenKarten))}
+      ${row('Noch nicht bezahlte Karten (heute)', eur(opSum))}
+      ${row('Frei verfügbar am '+dDE(bis)+' (Bestand − Kartenguthaben)', eur(ende-offenKarten),'tot')}
+    </div>
+    <div><span class="label">Buchungen (${inP.length})</span>
+      ${inP.length?`<div class="tscroll"><table class="rtable"><thead><tr><th>Datum</th><th>Kategorie</th><th>Beschreibung</th><th style="text-align:right">Einnahme</th><th style="text-align:right">Ausgabe</th><th>Beleg</th></tr></thead><tbody>
+      ${inP.map(e=>`<tr><td>${dDE(e.datum)}</td><td>${esc(e.kategorie)}</td><td>${esc(e.text||'')}</td><td class="n">${e.typ==='ein'?eur(e.betrag):''}</td><td class="n">${e.typ==='aus'?eur(e.betrag):''}</td><td>${e.beleg?'ja':'–'}</td></tr>`).join('')}
+      </tbody></table></div>`:'<p class="muted">Keine Buchungen im Zeitraum.</p>'}</div>
+    <div class="rfoot">Erstellt am ${new Date().toLocaleString('de-DE')} von ${esc(S.session?.user?.email||'')}</div>
+  </div>`;
+}
+$('#rVon').addEventListener('change', ()=>{ S.rRange=[$('#rVon').value, S.rRange[1]]; S.rPreset=null; renderBericht(); });
+$('#rBis').addEventListener('change', ()=>{ S.rRange=[S.rRange[0], $('#rBis').value]; S.rPreset=null; renderBericht(); });
 
 /* ---------- Aussehen ---------- */
 const look = {farbe:'#17231F', akzent:'#F2B705', logo:null, dirty:false};
@@ -562,9 +674,9 @@ function openSheet(html, meta){ const pn=$('#sheetPanel'), keep=!$('#sheet').hid
 function closeSheet(){ document.body.classList.remove('locked'); $('#sheet').hidden=true; $('#sheetPanel').innerHTML=''; S.sheet=null; }
 const sheetHead = t => `<div class="spread"><h2>${t}</h2><button class="btn" data-act="close">Schließen</button></div>`;
 
-function entryForm(){
+function entryForm(pre){
   const kats = t => (t==='ein'?KAT_IN:KAT_OUT).map(k=>`<option>${k}</option>`).join('');
-  openSheet(`${sheetHead('Neue Buchung')}
+  openSheet(`${sheetHead(pre && pre.kat===ANF ? 'Anfangsbestand buchen' : 'Neue Buchung')}${pre && pre.kat===ANF ? '<div class="notice">Trag hier das Bargeld ein, das schon in der Kasse ist. Es zählt zum Kassenstand, aber nicht zu den Einnahmen.</div>' : ''}
     <form id="entryForm" class="stack" style="gap:14px">
       <div class="seg" role="group" aria-label="Art"><button type="button" class="out" data-typ="aus" aria-pressed="true">Ausgabe</button><button type="button" class="in" data-typ="ein" aria-pressed="false">Einnahme</button></div>
       <div class="grid2">
@@ -578,6 +690,7 @@ function entryForm(){
     </form>`);
   const f=$('#entryForm'); f.dataset.typ='aus';
   f.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{ f.dataset.typ=b.dataset.typ; f.querySelectorAll('.seg button').forEach(x=>x.setAttribute('aria-pressed',x===b)); $('#eKat').innerHTML=kats(b.dataset.typ); });
+  if (pre){ f.querySelector('[data-typ="'+pre.typ+'"]').click(); if (pre.kat) $('#eKat').value=pre.kat; if (pre.text) $('#eText').value=pre.text; }
   let foto=null; const fi=$('#eFoto');
   fi.onchange = async()=>{ const file=fi.files[0]; if(!file) return; $('#eFotoLbl').textContent='Wird vorbereitet …';
     try{ foto=await compress(file); $('#ePrev').src=URL.createObjectURL(foto); $('#ePrev').hidden=false; $('#eFotoLbl').textContent='Beleg bereit'; }catch(e){ $('#eFotoLbl').textContent='Foto konnte nicht gelesen werden'; } };
@@ -609,21 +722,26 @@ async function entryDetail(id){
 function cardForm(){
   openSheet(`${sheetHead('Neue Getränkekarte')}
     <form id="cardForm" class="stack" style="gap:14px">
+      <div class="seg3" role="group" aria-label="Art der Karte"><button type="button" data-mode="neu" aria-pressed="true">Neu verkauft</button><button type="button" data-mode="alt" aria-pressed="false">Bestehende Karte übernehmen</button></div>
       <div class="field"><label class="label" for="cName">Name der Person</label><input id="cName" maxlength="60" required placeholder="Vor- und Nachname"></div>
-      <div class="field"><label class="label" for="cWert">Wert (€)</label><input id="cWert" inputmode="decimal" class="num" value="${centsIn(S.config.wert)}"></div>
-      <label class="check"><input type="checkbox" id="cPaid" checked><span>Bezahlt – als Einnahme ins Kassenbuch eintragen. Ohne Haken bleibt die Zahlung offen und kann später nachgebucht werden.</span></label>
+      <div class="field"><label class="label" for="cWert" id="cWertLbl">Wert (€)</label><input id="cWert" inputmode="decimal" class="num" value="${centsIn(S.config.wert)}"></div>
+      <label class="check" id="cPaidRow"><input type="checkbox" id="cPaid" checked><span>Bezahlt – als Einnahme ins Kassenbuch eintragen. Ohne Haken bleibt die Zahlung offen und kann später nachgebucht werden.</span></label>
+      <div class="notice" id="cAltInfo" hidden>Für Karten, die schon vor der App verkauft und bezahlt wurden. Das Restguthaben kommt auf die neue digitale Karte, ins Kassenbuch wird nichts gebucht, weil das Geld schon im Anfangsbestand steckt.</div>
       <button class="btn primary wide" type="submit" id="cSave">Karte anlegen</button>
     </form>`);
-  $('#cardForm').onsubmit = async ev=>{
-    ev.preventDefault(); const name=$('#cName').value.trim(), wert=toCents($('#cWert').value);
-    if (!name || !(wert>0)){ toast('Name und Wert angeben.'); return; }
+  const f=$('#cardForm'); f.dataset.mode='neu';
+  f.querySelectorAll('.seg3 button').forEach(b=>b.onclick=()=>{ f.dataset.mode=b.dataset.mode; f.querySelectorAll('.seg3 button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+    const alt=b.dataset.mode==='alt'; $('#cWertLbl').textContent = alt?'Restguthaben (€)':'Wert (€)'; $('#cPaidRow').hidden=alt; $('#cAltInfo').hidden=!alt; $('#cSave').textContent = alt?'Karte übernehmen':'Karte anlegen'; if (alt) $('#cWert').select(); });
+  f.onsubmit = async ev=>{
+    ev.preventDefault(); const name=$('#cName').value.trim(), wert=toCents($('#cWert').value), alt=f.dataset.mode==='alt';
+    if (!name || !(wert>0)){ toast(alt?'Name und Restguthaben angeben.':'Name und Wert angeben.'); return; }
     $('#cSave').disabled=true; const code=newCode();
     try{
-      await q(sb.from('karten').insert({code, name, wert}));
-      const paid = $('#cPaid').checked;
+      await q(sb.from('karten').insert({code, name, wert: alt ? Math.max(wert, S.config.wert) : wert}));
+      const paid = alt || $('#cPaid').checked;
       await q(sb.from('buchungen').insert(paid ? {karte:code, typ:'auf', betrag:wert} : {karte:code, typ:'auf', betrag:wert, bezahlt:false}));
-      if (paid) await q(sb.from('kasse').insert({typ:'ein', betrag:wert, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Getränkekarte – '+name, karte:code}));
-      closeSheet(); toast('Karte angelegt'); await loadAll(); openCard(code);
+      if (paid && !alt) await q(sb.from('kasse').insert({typ:'ein', betrag:wert, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Getränkekarte – '+name, karte:code}));
+      closeSheet(); toast(alt?'Karte mit '+eur(wert)+' übernommen':'Karte angelegt'); await loadAll(); openCard(code);
     }catch(e){ fail(e); $('#cSave').disabled=false; }
   };
 }
@@ -640,7 +758,7 @@ function openCard(code){
       <div class="row">${canShare?`<button class="btn primary" data-act="share" data-id="${code}">Link teilen (WhatsApp …)</button>`:''}<button class="btn ${canShare?'':'primary'}" data-act="copy-msg" data-id="${code}">Nachricht kopieren</button><button class="btn" data-act="save-img" data-id="${code}">Als Bild</button></div>
     </div>
     ${openPay()[code] ? `<div class="notice stack" style="gap:8px"><b>Noch nicht bezahlt: ${eur(openPay()[code])}</b><span>Sobald das Geld da ist, hier nachbuchen. Es wird dann als Einnahme ins Kassenbuch eingetragen.</span><button class="btn primary" data-act="pay-open" data-id="${code}">Zahlung nachbuchen</button></div>` : ''}
-    <div class="row" id="topupRow">${k.aktiv?`<button class="btn amber" data-act="topup" data-id="${code}">+ ${eur(S.config.wert)} aufladen</button><button class="btn danger" data-act="deact" data-id="${code}">Deaktivieren</button>`:`<button class="btn" data-act="react" data-id="${code}">Wieder aktivieren</button>`}</div>
+    <div class="row" id="topupRow">${k.aktiv?`<button class="btn amber" data-act="topup" data-id="${code}">+ Aufladen</button><button class="btn danger" data-act="deact" data-id="${code}">Deaktivieren</button>`:`<button class="btn" data-act="react" data-id="${code}">Wieder aktivieren</button>`}</div>
     <h3>Verlauf</h3>${histHTML(hist)}
     <div class="panel stack" style="margin-top:8px"><h3>Karte löschen</h3>
       <span class="muted">Die Karte und ihr Verlauf werden endgültig entfernt, der Link funktioniert dann nicht mehr. Einnahmen im Kassenbuch bleiben erhalten.${bal>0?` <b>Achtung: Auf der Karte sind noch ${eur(bal)} Guthaben.</b>`:''}${openPay()[code]?` <b>Achtung: ${eur(openPay()[code])} sind noch nicht bezahlt.</b>`:''}</span>
@@ -751,6 +869,7 @@ document.addEventListener('click', async ev=>{
   try{
     if (a==='close') closeSheet();
     else if (a==='new-entry') entryForm();
+    else if (a==='anf') entryForm({typ:'ein', kat:ANF, text:'Übertrag vorhandener Kassenbestand'});
     else if (a==='entry') entryDetail(id);
     else if (a==='new-card') cardForm();
     else if (a==='card') openCard(id);
@@ -763,11 +882,17 @@ document.addEventListener('click', async ev=>{
     else if (a==='copy-msg') copy(shareText(k));
     else if (a==='save-img'){ const blob=await cardImage(k), file=new File([blob],'Getraenkekarte-'+k.code+'.png',{type:'image/png'});
       if (navigator.canShare && navigator.canShare({files:[file]})) { try{ await navigator.share({files:[file], text:shareText(k)}); }catch(e){} } else download(blob, file.name); }
-    else if (a==='topup'){ $('#topupRow').innerHTML = `<div class="panel stack" style="width:100%"><b>${eur(S.config.wert)} aufladen – wurde schon bezahlt?</b><div class="row"><button class="btn primary" data-act="topup-go" data-paid="1" data-id="${id}">Ja, bezahlt</button><button class="btn" data-act="topup-go" data-paid="0" data-id="${id}">Nein, zahlt später</button><button class="btn link" data-act="card" data-id="${id}">Abbrechen</button></div></div>`; }
-    else if (a==='topup-go'){ const w=S.config.wert, paid=t.dataset.paid==='1'; t.disabled=true;
-      await q(sb.from('buchungen').insert(paid ? {karte:id, typ:'auf', betrag:w} : {karte:id, typ:'auf', betrag:w, bezahlt:false}));
-      if (paid) await q(sb.from('kasse').insert({typ:'ein', betrag:w, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Aufladung – '+k.name, karte:id}));
-      toast(eur(w)+' aufgeladen'+(paid?'':' – Zahlung offen')); await loadAll(); openCard(id); }
+    else if (a==='topup'){ $('#topupRow').innerHTML = `<div class="panel stack" style="width:100%">
+        <div class="field"><label class="label" for="tBetrag">Betrag (€)</label><input id="tBetrag" inputmode="decimal" class="num inp" value="${centsIn(S.config.wert)}"></div>
+        <b>Wurde schon bezahlt?</b>
+        <div class="stack" style="gap:8px"><button class="btn primary" data-act="topup-go" data-paid="1" data-id="${id}">Ja, jetzt bezahlt (Kassenbuch)</button>
+        <button class="btn" data-act="topup-go" data-paid="0" data-id="${id}">Nein, zahlt später</button>
+        <button class="btn" data-act="topup-go" data-paid="alt" data-id="${id}">Übertrag von alter Karte (schon früher bezahlt)</button>
+        <button class="btn link" data-act="card" data-id="${id}">Abbrechen</button></div></div>`; }
+    else if (a==='topup-go'){ const w=toCents($('#tBetrag').value), mode=t.dataset.paid; if (!(w>0)){ toast('Bitte einen Betrag größer 0 eingeben.'); return; } t.disabled=true;
+      await q(sb.from('buchungen').insert(mode==='0' ? {karte:id, typ:'auf', betrag:w, bezahlt:false} : {karte:id, typ:'auf', betrag:w}));
+      if (mode==='1') await q(sb.from('kasse').insert({typ:'ein', betrag:w, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Aufladung – '+k.name, karte:id}));
+      toast(eur(w)+(mode==='alt'?' übertragen':' aufgeladen')+(mode==='0'?' – Zahlung offen':'')); await loadAll(); openCard(id); }
     else if (a==='pay-open'){ const sum=openPay()[id]||0; if (!sum) return; if (!confirm2('Geld erhalten? Tippen zum Bestätigen')) return;
       await q(sb.from('buchungen').update({bezahlt:true}).eq('karte',id).eq('typ','auf').eq('bezahlt',false));
       await q(sb.from('kasse').insert({typ:'ein', betrag:sum, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Nachzahlung Getränkekarte – '+k.name, karte:id}));
@@ -782,6 +907,8 @@ document.addEventListener('click', async ev=>{
     else if (a==='del-entry'){ if (!confirm2('Tippen zum endgültigen Löschen')) return; const e=S.kasse.find(x=>x.id===id);
       await q(sb.from('kasse').delete().eq('id',id)); if (e && e.beleg) sb.storage.from('belege').remove([e.beleg]); closeSheet(); toast('Buchung gelöscht'); loadAll(); }
     else if (a==='del-admin'){ if (!confirm2('Wirklich entfernen?')) return; await q(sb.from('admins').delete().eq('email',id)); toast('Entfernt'); loadAll(); }
+    else if (a==='rpreset'){ S.rPreset=t.dataset.p; S.rRange=presetRange(t.dataset.p); renderBericht(); }
+    else if (a==='print'){ window.print(); }
     else if (a==='csv-kasse') saveCSV('kasse');
     else if (a==='csv-karten') saveCSV('karten');
     else if (a==='logout'){ camStop(); await sb.auth.signOut(); S.session=null; S.forceLogin=false; decideMode(); }
