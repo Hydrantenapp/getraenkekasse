@@ -329,11 +329,12 @@ function applyBrand(){
 
 let toastT;
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true,2800); }
-function fail(e, what){ console.warn(e); toast((what||'Speichern')+' fehlgeschlagen' + (e && e.message ? ': '+e.message : '')); }
+function fail(e, what){ console.warn(e); if (/bezahlt/.test(e&&e.message||'') && /column|schema/i.test(e.message)) return toast('Datenbank-Update fehlt: bitte update-zahlungen.sql ausführen.'); toast((what||'Speichern')+' fehlgeschlagen' + (e && e.message ? ': '+e.message : '')); }
 async function q(p){ const {data, error} = await p; if (error) throw error; return data; }
 
 /* ---------- Berechnungen ---------- */
 function balances(){ const m={}; for (const b of S.buch) m[b.karte]=(m[b.karte]||0)+(b.typ==='auf'?b.betrag:-b.betrag); return m; }
+function openPay(){ const m={}; for (const b of S.buch) if (b.typ==='auf' && b.bezahlt===false) m[b.karte]=(m[b.karte]||0)+b.betrag; return m; }
 function kasseStats(){ let ein=0,aus=0; for (const e of S.kasse){ if(e.typ==='ein') ein+=e.betrag; else aus+=e.betrag; } return {ein,aus,saldo:ein-aus}; }
 
 /* ---------- QR & Karte ---------- */
@@ -419,7 +420,9 @@ function renderKasse(){
     <div><span class="label">Einnahmen</span><span class="mid pos">+${eur(st.ein)}</span></div>
     <div><span class="label">Ausgaben</span><span class="mid neg">−${eur(st.aus)}</span></div>
     <div><span class="label">Offenes Kartenguthaben</span><span class="mid">${eur(offen)}</span></div>
-    <div><span class="label">Frei verfügbar</span><span class="mid ${frei<0?'neg':''}">${eur(frei)}</span></div></div>`;
+    <div><span class="label">Frei verfügbar</span><span class="mid ${frei<0?'neg':''}">${eur(frei)}</span></div></div>`
+    + (()=>{ const op=openPay(), n=Object.keys(op).length, sum=Object.values(op).reduce((a,b)=>a+b,0);
+        return n ? `<button class="notice" data-act="show-open" style="border:0;text-align:left;cursor:pointer;width:100%;margin-top:12px"><b>Noch nicht bezahlt: ${eur(sum)}</b> bei ${n} ${n===1?'Karte':'Karten'}. Tippen zum Anzeigen.</button>` : ''; })();
   if (!S.kasse.length){ $('#kasseList').innerHTML = `<div class="list"><div class="empty">Noch keine Buchungen. Tippe auf „+ Buchung“, um den ersten Getränkeeinkauf oder Verkauf einzutragen. Verkaufte Getränkekarten erscheinen hier automatisch.</div></div>`; return; }
   const chrono = [...S.kasse].sort((a,b)=>a.datum.localeCompare(b.datum) || a.created_at.localeCompare(b.created_at));
   let run=0; const stand={}; for (const e of chrono){ run += e.typ==='ein'?e.betrag:-e.betrag; stand[e.id]=run; }
@@ -444,13 +447,15 @@ function renderKarten(){
     <div><span class="label">Offenes Guthaben</span><span class="mid">${eur(aktiv.reduce((s,k)=>s+Math.max(0,bal[k.code]||0),0))}</span></div>
     <div><span class="label">Aufgeladen gesamt</span><span class="mid">${eur(sum('auf'))}</span></div>
     <div><span class="label">Abgebucht gesamt</span><span class="mid">${eur(sum('ab'))}</span></div></div>`;
-  const list = S.karten.filter(k=>!qs || k.name.toLowerCase().includes(qs) || k.code.toLowerCase().includes(qs))
+  const op = openPay();
+  const list = S.karten.filter(k=>(!S.onlyOpen || op[k.code]) && (!qs || k.name.toLowerCase().includes(qs) || k.code.toLowerCase().includes(qs)))
     .sort((a,b)=>(!a.aktiv)-(!b.aktiv) || a.name.localeCompare(b.name,'de'));
-  $('#kartenList').innerHTML = !S.karten.length ? `<div class="cards"><div class="empty">Noch keine Getränkekarten. Lege mit „+ Neue Karte“ die erste an und schick den Link an die Person.</div></div>`
+  const filt = S.onlyOpen ? `<div class="spread notice"><span>Nur Karten mit offener Zahlung</span><button class="btn" data-act="show-all">Alle zeigen</button></div>` : '';
+  $('#kartenList').innerHTML = filt + (!S.karten.length ? `<div class="cards"><div class="empty">Noch keine Getränkekarten. Lege mit „+ Neue Karte“ die erste an und schick den Link an die Person.</div></div>`
     : !list.length ? `<div class="cards"><div class="empty">Keine Karte passt zu „${esc(qs)}“.</div></div>`
     : `<div class="cards">${list.map(k=>{ const b=bal[k.code]||0, max=Math.max(k.wert,b), pct=max>0?Math.max(0,Math.min(100,b/max*100)):0;
-      return `<button class="crow" data-act="card" data-id="${k.code}"><span><b>${esc(k.name)}</b> <span class="muted num" style="font-size:13px">${k.code}</span>${k.aktiv?'':' <span class="chip">deaktiviert</span>'}</span>
-      <span class="num" style="font-weight:600">${eur(b)}</span><span class="meter"><i class="${b<S.config.preis?'low':''}" style="width:${pct}%"></i></span></button>`;}).join('')}</div>`;
+      return `<button class="crow" data-act="card" data-id="${k.code}"><span><b>${esc(k.name)}</b> <span class="muted num" style="font-size:13px">${k.code}</span>${k.aktiv?'':' <span class="chip">deaktiviert</span>'}${op[k.code]?` <span class="chip" style="color:var(--neg);border-color:var(--neg)">${eur(op[k.code])} offen</span>`:''}</span>
+      <span class="num" style="font-weight:600">${eur(b)}</span><span class="meter"><i class="${b<S.config.preis?'low':''}" style="width:${pct}%"></i></span></button>`;}).join('')}</div>`);
   const names = Object.fromEntries(S.karten.map(k=>[k.code,k.name]));
   const recent = S.buch.filter(b=>b.typ==='ab').sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,25);
   $('#buchList').innerHTML = recent.length ? `<div class="list">${recent.map(b=>`<div class="item"><span class="date">${fmtTs(b.created_at).replace(', ','<br>')}</span><span class="t"><b>${esc(names[b.karte]||b.karte)}</b><small class="num">${b.karte}${b.anzahl>1?' · '+b.anzahl+' Getränke':''}</small></span><span class="amt neg">−${eur(b.betrag)}</span></div>`).join('')}</div>`
@@ -592,7 +597,7 @@ function cardForm(){
     <form id="cardForm" class="stack" style="gap:14px">
       <div class="field"><label class="label" for="cName">Name der Person</label><input id="cName" maxlength="60" required placeholder="Vor- und Nachname"></div>
       <div class="field"><label class="label" for="cWert">Wert (€)</label><input id="cWert" inputmode="decimal" class="num" value="${centsIn(S.config.wert)}"></div>
-      <label class="check"><input type="checkbox" id="cPaid" checked><span>Bezahlt – als Einnahme ins Kassenbuch eintragen</span></label>
+      <label class="check"><input type="checkbox" id="cPaid" checked><span>Bezahlt – als Einnahme ins Kassenbuch eintragen. Ohne Haken bleibt die Zahlung offen und kann später nachgebucht werden.</span></label>
       <button class="btn primary wide" type="submit" id="cSave">Karte anlegen</button>
     </form>`);
   $('#cardForm').onsubmit = async ev=>{
@@ -601,8 +606,9 @@ function cardForm(){
     $('#cSave').disabled=true; const code=newCode();
     try{
       await q(sb.from('karten').insert({code, name, wert}));
-      await q(sb.from('buchungen').insert({karte:code, typ:'auf', betrag:wert}));
-      if ($('#cPaid').checked) await q(sb.from('kasse').insert({typ:'ein', betrag:wert, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Getränkekarte – '+name, karte:code}));
+      const paid = $('#cPaid').checked;
+      await q(sb.from('buchungen').insert(paid ? {karte:code, typ:'auf', betrag:wert} : {karte:code, typ:'auf', betrag:wert, bezahlt:false}));
+      if (paid) await q(sb.from('kasse').insert({typ:'ein', betrag:wert, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Getränkekarte – '+name, karte:code}));
       closeSheet(); toast('Karte angelegt'); await loadAll(); openCard(code);
     }catch(e){ fail(e); $('#cSave').disabled=false; }
   };
@@ -619,7 +625,8 @@ function openCard(code){
       <div class="linkbox" id="lnk">${esc(cardLink(k))}</div>
       <div class="row">${canShare?`<button class="btn primary" data-act="share" data-id="${code}">Link teilen (WhatsApp …)</button>`:''}<button class="btn ${canShare?'':'primary'}" data-act="copy-msg" data-id="${code}">Nachricht kopieren</button><button class="btn" data-act="save-img" data-id="${code}">Als Bild</button></div>
     </div>
-    <div class="row">${k.aktiv?`<button class="btn amber" data-act="topup" data-id="${code}">+ ${eur(S.config.wert)} aufladen</button><button class="btn danger" data-act="deact" data-id="${code}">Deaktivieren</button>`:`<button class="btn" data-act="react" data-id="${code}">Wieder aktivieren</button>`}</div>
+    ${openPay()[code] ? `<div class="notice stack" style="gap:8px"><b>Noch nicht bezahlt: ${eur(openPay()[code])}</b><span>Sobald das Geld da ist, hier nachbuchen. Es wird dann als Einnahme ins Kassenbuch eingetragen.</span><button class="btn primary" data-act="pay-open" data-id="${code}">Zahlung nachbuchen</button></div>` : ''}
+    <div class="row" id="topupRow">${k.aktiv?`<button class="btn amber" data-act="topup" data-id="${code}">+ ${eur(S.config.wert)} aufladen</button><button class="btn danger" data-act="deact" data-id="${code}">Deaktivieren</button>`:`<button class="btn" data-act="react" data-id="${code}">Wieder aktivieren</button>`}</div>
     <h3>Verlauf</h3>${histHTML(hist)}`, {kind:'karte', id:code});
   paintQRs($('#sheetPanel'));
 }
@@ -737,9 +744,17 @@ document.addEventListener('click', async ev=>{
     else if (a==='copy-msg') copy(shareText(k));
     else if (a==='save-img'){ const blob=await cardImage(k), file=new File([blob],'Getraenkekarte-'+k.code+'.png',{type:'image/png'});
       if (navigator.canShare && navigator.canShare({files:[file]})) { try{ await navigator.share({files:[file], text:shareText(k)}); }catch(e){} } else download(blob, file.name); }
-    else if (a==='topup'){ if (!confirm2('Bezahlt? Tippen zum Bestätigen')) return; const w=S.config.wert;
-      await q(sb.from('buchungen').insert({karte:id, typ:'auf', betrag:w})); await q(sb.from('kasse').insert({typ:'ein', betrag:w, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Aufladung – '+k.name, karte:id}));
-      toast(eur(w)+' aufgeladen'); loadAll(); }
+    else if (a==='topup'){ $('#topupRow').innerHTML = `<div class="panel stack" style="width:100%"><b>${eur(S.config.wert)} aufladen – wurde schon bezahlt?</b><div class="row"><button class="btn primary" data-act="topup-go" data-paid="1" data-id="${id}">Ja, bezahlt</button><button class="btn" data-act="topup-go" data-paid="0" data-id="${id}">Nein, zahlt später</button><button class="btn link" data-act="card" data-id="${id}">Abbrechen</button></div></div>`; }
+    else if (a==='topup-go'){ const w=S.config.wert, paid=t.dataset.paid==='1'; t.disabled=true;
+      await q(sb.from('buchungen').insert(paid ? {karte:id, typ:'auf', betrag:w} : {karte:id, typ:'auf', betrag:w, bezahlt:false}));
+      if (paid) await q(sb.from('kasse').insert({typ:'ein', betrag:w, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Aufladung – '+k.name, karte:id}));
+      toast(eur(w)+' aufgeladen'+(paid?'':' – Zahlung offen')); await loadAll(); openCard(id); }
+    else if (a==='pay-open'){ const sum=openPay()[id]||0; if (!sum) return; if (!confirm2('Geld erhalten? Tippen zum Bestätigen')) return;
+      await q(sb.from('buchungen').update({bezahlt:true}).eq('karte',id).eq('typ','auf').eq('bezahlt',false));
+      await q(sb.from('kasse').insert({typ:'ein', betrag:sum, datum:today(), kategorie:'Getränkekarten-Verkauf', text:'Nachzahlung Getränkekarte – '+k.name, karte:id}));
+      toast(eur(sum)+' nachgebucht'); await loadAll(); openCard(id); }
+    else if (a==='show-open'){ S.onlyOpen=true; S.tab='karten'; render(); scrollTo(0,0); }
+    else if (a==='show-all'){ S.onlyOpen=false; renderKarten(); }
     else if (a==='deact'||a==='react'){ if (a==='deact' && !confirm2('Wirklich deaktivieren?')) return; await q(sb.from('karten').update({aktiv:a==='react'}).eq('code',id)); toast(a==='react'?'Karte aktiviert':'Karte deaktiviert'); loadAll(); }
     else if (a==='del-entry'){ if (!confirm2('Tippen zum endgültigen Löschen')) return; const e=S.kasse.find(x=>x.id===id);
       await q(sb.from('kasse').delete().eq('id',id)); if (e && e.beleg) sb.storage.from('belege').remove([e.beleg]); closeSheet(); toast('Buchung gelöscht'); loadAll(); }
