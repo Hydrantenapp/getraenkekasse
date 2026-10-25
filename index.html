@@ -641,7 +641,10 @@ function openCard(code){
     </div>
     ${openPay()[code] ? `<div class="notice stack" style="gap:8px"><b>Noch nicht bezahlt: ${eur(openPay()[code])}</b><span>Sobald das Geld da ist, hier nachbuchen. Es wird dann als Einnahme ins Kassenbuch eingetragen.</span><button class="btn primary" data-act="pay-open" data-id="${code}">Zahlung nachbuchen</button></div>` : ''}
     <div class="row" id="topupRow">${k.aktiv?`<button class="btn amber" data-act="topup" data-id="${code}">+ ${eur(S.config.wert)} aufladen</button><button class="btn danger" data-act="deact" data-id="${code}">Deaktivieren</button>`:`<button class="btn" data-act="react" data-id="${code}">Wieder aktivieren</button>`}</div>
-    <h3>Verlauf</h3>${histHTML(hist)}`, {kind:'karte', id:code});
+    <h3>Verlauf</h3>${histHTML(hist)}
+    <div class="panel stack" style="margin-top:8px"><h3>Karte löschen</h3>
+      <span class="muted">Die Karte und ihr Verlauf werden endgültig entfernt, der Link funktioniert dann nicht mehr. Einnahmen im Kassenbuch bleiben erhalten.${bal>0?` <b>Achtung: Auf der Karte sind noch ${eur(bal)} Guthaben.</b>`:''}${openPay()[code]?` <b>Achtung: ${eur(openPay()[code])} sind noch nicht bezahlt.</b>`:''}</span>
+      <button class="btn danger" data-act="del-card" data-id="${code}">Karte löschen</button></div>`, {kind:'karte', id:code});
   paintQRs($('#sheetPanel'));
 }
 const shareText = k => `Hallo ${k.name}, hier ist deine digitale Getränkekarte (${S.config.einheit}):\n${cardLink(k)}\n\nLink öffnen und über „Teilen“ bzw. ⋮ → „Zum Home-Bildschirm“ aufs Handy legen. Dann einfach den QR-Code an der Getränkeausgabe zeigen.`;
@@ -770,6 +773,8 @@ document.addEventListener('click', async ev=>{
     else if (a==='show-open'){ S.onlyOpen=true; S.tab='karten'; render(); scrollTo(0,0); }
     else if (a==='show-all'){ S.onlyOpen=false; renderKarten(); }
     else if (a==='deact'||a==='react'){ if (a==='deact' && !confirm2('Wirklich deaktivieren?')) return; await q(sb.from('karten').update({aktiv:a==='react'}).eq('code',id)); toast(a==='react'?'Karte aktiviert':'Karte deaktiviert'); loadAll(); }
+    else if (a==='del-card'){ if (!confirm2('Endgültig löschen? Nochmal tippen')) return;
+      await q(sb.from('karten').delete().eq('code',id)); closeSheet(); toast('Karte von '+k.name+' gelöscht'); loadAll(); }
     else if (a==='del-entry'){ if (!confirm2('Tippen zum endgültigen Löschen')) return; const e=S.kasse.find(x=>x.id===id);
       await q(sb.from('kasse').delete().eq('id',id)); if (e && e.beleg) sb.storage.from('belege').remove([e.beleg]); closeSheet(); toast('Buchung gelöscht'); loadAll(); }
     else if (a==='del-admin'){ if (!confirm2('Wirklich entfernen?')) return; await q(sb.from('admins').delete().eq('email',id)); toast('Entfernt'); loadAll(); }
