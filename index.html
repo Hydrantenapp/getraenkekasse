@@ -114,10 +114,15 @@ div.item:hover{background:none}
 .logoRow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .logoRow img{width:64px;height:64px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:var(--sunk)}
 .cards{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
-.crow{display:grid;grid-template-columns:1fr auto;gap:6px 12px;padding:12px 16px;border-top:1px solid var(--line);background:none;border-left:0;border-right:0;border-bottom:0;text-align:left;cursor:pointer;width:100%}
+.crow{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:6px 12px;padding:12px 16px;border-top:1px solid var(--line);background:none;border-left:0;border-right:0;border-bottom:0;text-align:left;cursor:pointer;width:100%}
 .crow:first-child{border-top:0}
 .crow:hover{background:var(--sunk)}
 .crow b{font-weight:600}
+.sent{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;padding:0;flex:none}
+.sent svg{width:20px;height:20px}
+.sent.on{background:var(--pos);border-color:var(--pos);color:#fff}
+.sent.off{border-style:dashed;opacity:.55}
+.sentInfo{display:flex;align-items:center;gap:10px;font-size:14px}
 .crow .meter{grid-column:1/-1;height:6px;border-radius:3px;background:var(--sunk);overflow:hidden}
 .crow .meter i{display:block;height:100%;background:var(--primary)}
 .crow .meter i.low{background:var(--neg)}
@@ -463,6 +468,7 @@ function renderHolder(){
   const low = d.aktiv && d.guthaben < d.preis;
   $('#holderInfo').innerHTML = `
     <p class="muted" style="margin:0;text-align:center">Zeig den QR-Code an der Getränkeausgabe. Pro Getränk werden ${eur(d.preis)} abgebucht.</p>
+    ${!d.aktiv?`<div class="notice"><b>Diese Karte ist gesperrt.</b> Bitte wende dich an die Getränkekasse.</div>`:''}
     ${low?`<div class="notice">Dein Guthaben reicht für kein Getränk mehr. Lade die Karte an der Kasse auf.</div>`:''}
     <button class="btn" data-act="holder-refresh">Guthaben aktualisieren</button>
     <details class="panel"><summary>Karte aufs Handy legen</summary>
@@ -518,8 +524,8 @@ function renderKarten(){
   $('#kartenList').innerHTML = filt + (!S.karten.length ? `<div class="cards"><div class="empty">Noch keine Getränkekarten. Lege mit „+ Neue Karte“ die erste an und schick den Link an die Person.</div></div>`
     : !list.length ? `<div class="cards"><div class="empty">Keine Karte passt zu „${esc(qs)}“.</div></div>`
     : `<div class="cards">${list.map(k=>{ const b=bal[k.code]||0, max=Math.max(k.wert,b), pct=max>0?Math.max(0,Math.min(100,b/max*100)):0;
-      return `<button class="crow" data-act="card" data-id="${k.code}"><span><b>${esc(k.name)}</b> <span class="muted num" style="font-size:13px">${k.code}</span>${k.aktiv?'':' <span class="chip">deaktiviert</span>'}${op[k.code]?` <span class="chip" style="color:var(--neg);border-color:var(--neg)">${eur(op[k.code])} offen</span>`:''}</span>
-      <span class="num" style="font-weight:600">${eur(b)}</span><span class="meter"><i class="${b<S.config.preis?'low':''}" style="width:${pct}%"></i></span></button>`;}).join('')}</div>`);
+      return `<div class="crow" role="button" tabindex="0" data-act="card" data-id="${k.code}"><span><b>${esc(k.name)}</b> <span class="muted num" style="font-size:13px">${k.code}</span>${k.aktiv?'':' <span class="chip" style="color:var(--neg);border-color:var(--neg)">gesperrt</span>'}${op[k.code]?` <span class="chip" style="color:var(--neg);border-color:var(--neg)">${eur(op[k.code])} offen</span>`:''}</span>
+      <span class="num" style="font-weight:600">${eur(b)}</span>${sentBtn(k)}<span class="meter"><i class="${b<S.config.preis?'low':''}" style="width:${pct}%"></i></span></div>`;}).join('')}</div>`);
   const names = Object.fromEntries(S.karten.map(k=>[k.code,k.name]));
   const recent = S.buch.filter(b=>b.typ==='ab').sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,25);
   $('#buchList').innerHTML = recent.length ? `<div class="list">${recent.map(b=>`<div class="item"><span class="date">${fmtTs(b.created_at).replace(', ','<br>')}</span><span class="t"><b>${esc(names[b.karte]||b.karte)}</b><small class="num">${b.karte}${b.anzahl>1?' · '+b.anzahl+' Getränke':''}</small></span><span class="amt neg">−${eur(b.betrag)}</span></div>`).join('')}</div>`
@@ -759,6 +765,25 @@ function cardForm(){
   };
 }
 
+const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+function sentBtn(k){
+  if (k.aktiv && k.verschickt) return `<button class="sent on" data-act="sent-off" data-id="${k.code}" title="Verschickt am ${fmtTs(k.verschickt)} – tippen zum Sperren" aria-label="Verschickt. Tippen, um die Karte zu sperren">${CHECK}</button>`;
+  if (!k.aktiv) return `<button class="sent off" data-act="card" data-id="${k.code}" title="Gesperrt" aria-label="Gesperrt">${CHECK}</button>`;
+  return `<span class="sent" title="Noch nicht verschickt" aria-label="Noch nicht verschickt"></span>`;
+}
+async function markSent(code){
+  const k=S.karten.find(x=>x.code===code); if (!k) return;
+  try{ const ts=new Date().toISOString(); await q(sb.from('karten').update({verschickt:ts}).eq('code',code)); k.verschickt=ts; renderKarten(); if (S.sheet && S.sheet.kind==='karte' && S.sheet.id===code) openCard(code); }
+  catch(e){ console.warn(e); if (/verschickt/.test(e.message||'')) toast('Haken konnte nicht gespeichert werden: bitte update-verschickt.sql ausführen.'); }
+}
+function confirmDeact(code){
+  const k=S.karten.find(x=>x.code===code); if (!k) return;
+  openSheet(`${sheetHead('Karte sperren')}
+    <div class="notice stack" style="gap:6px"><b>Karte von ${esc(k.name)} wirklich inaktivieren?</b>
+    <span>Die Karte bleibt mit Guthaben und Verlauf erhalten, kann aber nicht mehr zum Abbuchen benutzt werden. Du kannst sie jederzeit wieder aktivieren.</span></div>
+    <div class="row"><button class="btn danger" data-act="deact-go" data-id="${code}">Ja, inaktivieren</button><button class="btn" data-act="close">Abbrechen</button></div>`, {kind:'confirm', id:code});
+}
+
 function openCard(code){
   const k=S.karten.find(x=>x.code===code); if(!k) return;
   const bal=balances()[code]||0, hist=S.buch.filter(b=>b.karte===code).sort((a,b)=>b.created_at.localeCompare(a.created_at));
@@ -766,13 +791,13 @@ function openCard(code){
   openSheet(`${sheetHead('Karte')}
     ${cardHTML(code, k.name, bal, k.aktiv)}
     <div class="panel stack">
-      <span class="label">Persönlicher Link</span>
-      <div class="linkbox" id="lnk">${esc(cardLink(k))}</div>
+      <span class="label">Karte verschicken</span>
+      ${k.verschickt ? `<div class="sentInfo"><span class="sent ${k.aktiv?'on':'off'}">${CHECK}</span><span>${k.aktiv?'Verschickt am '+fmtTs(k.verschickt):'Gesperrt (zuletzt verschickt am '+fmtTs(k.verschickt)+')'}</span></div>` : '<span class="muted">Noch nicht verschickt.</span>'}
       <div class="row">${canShare?`<button class="btn primary" data-act="share" data-id="${code}">Link teilen (WhatsApp …)</button>`:''}<button class="btn ${canShare?'':'primary'}" data-act="copy-msg" data-id="${code}">Nachricht kopieren</button><button class="btn" data-act="save-img" data-id="${code}">Als Bild</button></div>
     </div>
     ${openPay()[code] ? `<div class="notice stack" style="gap:8px"><b>Noch nicht bezahlt: ${eur(openPay()[code])}</b><span>Sobald das Geld da ist, hier nachbuchen. Es wird dann als Einnahme ins Kassenbuch eingetragen.</span><button class="btn primary" data-act="pay-open" data-id="${code}">Zahlung nachbuchen</button></div>` : ''}
     ${k.aktiv && !hist.length ? `<div class="notice">Diese Karte hat noch kein Guthaben. Über „+ Aufladen“ kannst du ein Restguthaben von einer alten Karte übernehmen oder neu aufladen.</div>` : ''}
-    <div class="row" id="topupRow">${k.aktiv?`<button class="btn amber" data-act="topup" data-id="${code}">+ Aufladen</button><button class="btn danger" data-act="deact" data-id="${code}">Deaktivieren</button>`:`<button class="btn" data-act="react" data-id="${code}">Wieder aktivieren</button>`}</div>
+    <div class="row" id="topupRow">${k.aktiv?`<button class="btn amber" data-act="topup" data-id="${code}">+ Aufladen</button><button class="btn danger" data-act="deact" data-id="${code}">Inaktivieren</button>`:`<button class="btn" data-act="react" data-id="${code}">Wieder aktivieren</button>`}</div>
     <h3>Verlauf</h3>${histHTML(hist)}
     <div class="panel stack" style="margin-top:8px"><h3>Karte löschen</h3>
       <span class="muted">Die Karte und ihr Verlauf werden endgültig entfernt, der Link funktioniert dann nicht mehr. Einnahmen im Kassenbuch bleiben erhalten.${bal>0?` <b>Achtung: Auf der Karte sind noch ${eur(bal)} Guthaben.</b>`:''}${openPay()[code]?` <b>Achtung: ${eur(openPay()[code])} sind noch nicht bezahlt.</b>`:''}</span>
@@ -870,8 +895,12 @@ function saveCSV(kind){
   download(new Blob(['﻿'+rows.map(r=>r.map(qv).join(';')).join('\r\n')],{type:'text/csv'}), (kind==='kasse'?'Kassenbuch':'Kartenbuchungen')+'-'+today()+'.csv');
 }
 async function copy(text){
-  try{ await navigator.clipboard.writeText(text); toast('Kopiert'); }
-  catch(e){ const el=$('#lnk'); if (el){ const r=document.createRange(); r.selectNodeContents(el); const s=getSelection(); s.removeAllRanges(); s.addRange(r); } toast('Bitte manuell kopieren'); }
+  try{ await navigator.clipboard.writeText(text); toast('Kopiert – jetzt in WhatsApp einfügen'); return true; }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=text; ta.setAttribute('readonly',''); ta.style.cssText='position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta); ta.select(); let ok=false; try{ ok=document.execCommand('copy'); }catch(_){} ta.remove();
+    toast(ok?'Kopiert – jetzt in WhatsApp einfügen':'Kopieren nicht möglich'); return ok;
+  }
 }
 
 /* ---------- Events ---------- */
@@ -892,10 +921,12 @@ document.addEventListener('click', async ev=>{
     else if (a==='cam-stop') camStop();
     else if (a==='manual-book'){ const c=parseCode($('#manualCode').value); if(!c){ toast('Bitte einen gültigen Code eingeben.'); return; } $('#manualCode').value=''; await book(c); }
     else if (a==='undo'){ const r=S.lastScan; if(!r||!r.id) return; await q(sb.from('buchungen').delete().eq('id',r.id)); r.undone=true; r.guthaben+=r.betrag; renderScan(); toast('Abbuchung zurückgenommen'); loadAll(); }
-    else if (a==='share'){ try{ await navigator.share({title:'Getränkekarte', text:shareText(k)}); }catch(e){} }
-    else if (a==='copy-msg') copy(shareText(k));
+    else if (a==='share'){ try{ await navigator.share({title:'Getränkekarte', text:shareText(k)}); markSent(id); }catch(e){} }
+    else if (a==='copy-msg'){ if (await copy(shareText(k))) markSent(id); }
     else if (a==='save-img'){ const blob=await cardImage(k), file=new File([blob],'Getraenkekarte-'+k.code+'.png',{type:'image/png'});
-      if (navigator.canShare && navigator.canShare({files:[file]})) { try{ await navigator.share({files:[file], text:shareText(k)}); }catch(e){} } else download(blob, file.name); }
+      if (navigator.canShare && navigator.canShare({files:[file]})) { try{ await navigator.share({files:[file], text:shareText(k)}); markSent(id); }catch(e){} } else { download(blob, file.name); markSent(id); } }
+    else if (a==='sent-off') confirmDeact(id);
+    else if (a==='deact-go'){ t.disabled=true; await q(sb.from('karten').update({aktiv:false}).eq('code',id)); closeSheet(); toast('Karte von '+k.name+' gesperrt'); loadAll(); }
     else if (a==='topup'){ $('#topupRow').innerHTML = `<div class="panel stack" style="width:100%">
         <div class="field"><label class="label" for="tBetrag">Betrag (€)</label><input id="tBetrag" inputmode="decimal" class="num inp" value="${centsIn(S.config.wert)}"></div>
         <b>Wurde schon bezahlt?</b>
@@ -913,7 +944,8 @@ document.addEventListener('click', async ev=>{
       toast(eur(sum)+' nachgebucht'); await loadAll(); openCard(id); }
     else if (a==='show-open'){ S.onlyOpen=true; S.tab='karten'; render(); scrollTo(0,0); }
     else if (a==='show-all'){ S.onlyOpen=false; renderKarten(); }
-    else if (a==='deact'||a==='react'){ if (a==='deact' && !confirm2('Wirklich deaktivieren?')) return; await q(sb.from('karten').update({aktiv:a==='react'}).eq('code',id)); toast(a==='react'?'Karte aktiviert':'Karte deaktiviert'); loadAll(); }
+    else if (a==='deact') confirmDeact(id);
+    else if (a==='react'){ await q(sb.from('karten').update({aktiv:a==='react'}).eq('code',id)); toast(a==='react'?'Karte aktiviert':'Karte deaktiviert'); loadAll(); }
     else if (a==='del-card'){ if (!confirm2('Endgültig löschen? Nochmal tippen')) return;
       const alsoKasse = $('#delKasse') && $('#delKasse').checked;
       if (alsoKasse) await q(sb.from('kasse').delete().eq('karte',id));
@@ -932,7 +964,7 @@ document.addEventListener('click', async ev=>{
     else if (a==='holder-refresh'){ await loadHolder(); toast('Aktualisiert'); }
   }catch(e){ fail(e); }
 });
-document.addEventListener('keydown', e=>{ if (e.key==='Escape' && !$('#sheet').hidden) closeSheet(); });
+document.addEventListener('keydown', e=>{ if ((e.key==='Enter'||e.key===' ') && e.target.classList && e.target.classList.contains('crow')){ e.preventDefault(); e.target.click(); return; } if (e.key==='Escape' && !$('#sheet').hidden) closeSheet(); });
 $('#cardSearch').addEventListener('input', renderKarten);
 $('#manualCode').addEventListener('keydown', e=>{ if (e.key==='Enter'){ e.preventDefault(); $('[data-act="manual-book"]').click(); } });
 $('#scanInput').addEventListener('change', async()=>{
